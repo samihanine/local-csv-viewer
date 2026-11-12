@@ -1,0 +1,4 @@
+[install]
+# Refuse package versions published less than 3 days ago: most hijacked releases are caught and removed within hours.
+minimumReleaseAge = 259200
+# Lifecycle scripts of dependencies never run unless listed in package.json "trustedDependencies".

@@ -1,0 +1,169 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "@fontsource-variable/inter";
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --radius: 0.75rem;
+  --app: oklch(0.955 0.003 300);
+  --brand: oklch(0.62 0.19 255);
+  --background: oklch(1 0 0);
+  --foreground: oklch(0.145 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.145 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.145 0 0);
+  --primary: oklch(0.205 0 0);
+  --primary-foreground: oklch(0.985 0 0);
+  --secondary: oklch(0.97 0 0);
+  --secondary-foreground: oklch(0.205 0 0);
+  --muted: oklch(0.97 0 0);
+  --muted-foreground: oklch(0.556 0 0);
+  --accent: oklch(0.97 0 0);
+  --accent-foreground: oklch(0.205 0 0);
+  --destructive: oklch(0.577 0.245 27.325);
+  --border: oklch(0.925 0.002 300);
+  --input: oklch(0.9 0.002 300);
+  --ring: oklch(0.708 0 0);
+  --option-bg-l: 0.95;
+  --option-bg-c: 0.3;
+  --option-fg-l: 0.4;
+  --option-fg-c: 1;
+}
+
+.dark {
+  --app: oklch(0.12 0 0);
+  --option-bg-l: 0.32;
+  --option-bg-c: 0.45;
+  --option-fg-l: 0.92;
+  --option-fg-c: 0.5;
+  --background: oklch(0.17 0 0);
+  --foreground: oklch(0.985 0 0);
+  --card: oklch(0.205 0 0);
+  --card-foreground: oklch(0.985 0 0);
+  --popover: oklch(0.205 0 0);
+  --popover-foreground: oklch(0.985 0 0);
+  --primary: oklch(0.922 0 0);
+  --primary-foreground: oklch(0.205 0 0);
+  --secondary: oklch(0.269 0 0);
+  --secondary-foreground: oklch(0.985 0 0);
+  --muted: oklch(0.269 0 0);
+  --muted-foreground: oklch(0.708 0 0);
+  --accent: oklch(0.269 0 0);
+  --accent-foreground: oklch(0.985 0 0);
+  --destructive: oklch(0.704 0.191 22.216);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.556 0 0);
+}
+
+@theme inline {
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-4xl: calc(var(--radius) * 2.6);
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, sans-serif;
+  --color-app: var(--app);
+  --color-brand: var(--brand);
+  --color-option: var(--option-bg);
+  --color-option-foreground: var(--option-fg);
+  --color-option-dot: var(--option-dot);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    @apply h-full;
+  }
+  body {
+    @apply bg-app text-foreground overflow-hidden font-sans text-sm antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--foreground) 18%, transparent);
+    background-clip: content-box;
+  }
+  ::-webkit-scrollbar-corner {
+    background: transparent;
+  }
+}
+
+/* Option colors: each one is a hue, the light and dark themes pick lightness and chroma. */
+[data-color] {
+  --option-h: 0;
+  --option-c: 0;
+  --option-bg: oklch(var(--option-bg-l) calc(var(--option-c) * var(--option-bg-c)) var(--option-h));
+  --option-fg: oklch(var(--option-fg-l) calc(var(--option-c) * var(--option-fg-c)) var(--option-h));
+  --option-dot: oklch(0.66 var(--option-c) var(--option-h));
+}
+[data-color="gray"] {
+  --option-dot: oklch(0.66 0 0);
+}
+[data-color="red"] {
+  --option-h: 25;
+  --option-c: 0.17;
+}
+[data-color="orange"] {
+  --option-h: 50;
+  --option-c: 0.16;
+}
+[data-color="amber"] {
+  --option-h: 85;
+  --option-c: 0.14;
+}
+[data-color="green"] {
+  --option-h: 150;
+  --option-c: 0.15;
+}
+[data-color="teal"] {
+  --option-h: 190;
+  --option-c: 0.11;
+}
+[data-color="blue"] {
+  --option-h: 250;
+  --option-c: 0.16;
+}
+[data-color="indigo"] {
+  --option-h: 275;
+  --option-c: 0.17;
+}
+[data-color="purple"] {
+  --option-h: 305;
+  --option-c: 0.17;
+}
+[data-color="pink"] {
+  --option-h: 350;
+  --option-c: 0.16;
+}
