@@ -248,6 +248,8 @@ export function useWorkspace() {
         filters: rename(state.filters),
         sort: state.sort?.column === from ? { ...state.sort, column: to } : state.sort,
         groupBy: state.groupBy === from ? to : state.groupBy,
+        order: state.order?.map((name) => (name === from ? to : name)),
+        hidden: state.hidden?.map((name) => (name === from ? to : name)),
       });
       updateEntry((current) => ({
         ...current,

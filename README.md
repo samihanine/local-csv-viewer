@@ -11,7 +11,7 @@ React + TypeScript + Vite + Tailwind + shadcn/ui (Base UI) + Bun.
 - **Fichiers** : choix d'un CSV avec accès en lecture et écriture, plusieurs fichiers mémorisés, changement via le sélecteur.
 - **Écriture en direct** : l'interface se met à jour tout de suite, le fichier suit ; si l'écriture échoue, la modification est annulée. Un fichier modifié par un autre programme est rechargé.
 - **Affichages** : tableau éditable, fiche détaillée avec formulaire, kanban (glisser-déposer, colonne de regroupement au choix), galerie.
-- **Filtres** sur chaque colonne, recherche globale, tri, et **vues enregistrées** (affichage + filtres + tri + regroupement).
+- **Filtres** sur chaque colonne, recherche globale, tri, ordre et visibilité des colonnes, et **vues enregistrées** (affichage + filtres + tri + regroupement + colonnes).
 - **Schéma** par fichier : texte court, texte long (markdown), date, options colorées. Détection automatique des types, export et import du schéma en JSON.
 - **Export XLSX** mis en forme : un tableau Excel en A1, bordures, retour à la ligne, hauteur de ligne uniforme, largeur selon le type.
 - **Import CSV / XLSX** : ajout à la fin ou remplacement, avec correspondance des colonnes si elles diffèrent.
@@ -48,6 +48,7 @@ src/
     views/                Tableau, détail, kanban, galerie
     sidebar.tsx           Sélecteur de fichier, vues enregistrées, outils
     filter-bar.tsx        Filtres, tri, regroupement, enregistrement de vue
+    columns-menu.tsx      Ordre et visibilité des colonnes de la vue
     fields.tsx            Affichage et édition d'une cellule selon son type
     markdown-editor.tsx   Éditeur de texte long
     schema-dialog.tsx     Schéma des colonnes

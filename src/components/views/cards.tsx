@@ -10,10 +10,13 @@ const MAX_TEXTS = 2;
 
 /** Title (first column) and a compact summary of the other columns. Shared by the kanban and the gallery. */
 export function CardContent({ row, hidden = -1, excerpt = false }: { row: Row; hidden?: number; excerpt?: boolean }) {
-  const { columns, types } = useView();
+  const { columns, types, display } = useView();
   const fields = columns
     .map((name, index) => ({ name, index, value: row.cells[index] ?? "", schema: types[index] as ColumnSchema }))
-    .filter((field) => field.index > 0 && field.index !== hidden && field.value.trim() !== "");
+    .filter(
+      (field) =>
+        field.index > 0 && field.index !== hidden && display.includes(field.index) && field.value.trim() !== "",
+    );
   const long = excerpt ? fields.find((field) => field.schema.type === "longtext") : undefined;
   const texts = fields.filter((field) => field.schema.type === "text").slice(0, MAX_TEXTS);
   const badges = fields.filter((field) => field.schema.type === "select");

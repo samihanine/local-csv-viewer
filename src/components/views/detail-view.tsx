@@ -48,8 +48,19 @@ function RowList({ selectedId }: { selectedId: number | undefined }) {
 }
 
 export function DetailView() {
-  const { columns, types, rows, visible, selectedId, selectRow, updateCell, setColumnSchema, removeRow, newRow } =
-    useView();
+  const {
+    columns,
+    display,
+    types,
+    rows,
+    visible,
+    selectedId,
+    selectRow,
+    updateCell,
+    setColumnSchema,
+    removeRow,
+    newRow,
+  } = useView();
   const row = rows.find((candidate) => candidate.id === selectedId) ?? visible[0];
   const position = row ? visible.findIndex((candidate) => candidate.id === row.id) : -1;
   const go = (step: number) => {
@@ -111,7 +122,8 @@ export function DetailView() {
               </div>
             </div>
             <div className="space-y-5">
-              {columns.map((column, index) => {
+              {display.map((index) => {
+                const column = columns[index] ?? "";
                 const schema = types[index] as ColumnSchema;
                 return (
                   <div

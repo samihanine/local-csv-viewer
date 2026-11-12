@@ -8,6 +8,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { useState } from "react";
+import { ColumnsMenu } from "@/components/columns-menu";
 import { OptionBadge, optionColor, SimpleSelect, TypeIconFor } from "@/components/fields";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -239,6 +240,7 @@ export function FilterBar({ open, onOpenChange, activeView, dirty, onSaveView, o
       )}
 
       <div className="ml-auto flex items-center gap-2">
+        <ColumnsMenu />
         {activeView && dirty && (
           <Button variant="ghost" size="sm" className="h-8 text-[13px]" onClick={onUpdateView}>
             Mettre à jour « {activeView.name} »

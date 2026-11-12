@@ -8,6 +8,8 @@ export type ViewContext = {
   columns: string[];
   /** Schema of each column, in column order. */
   types: ColumnSchema[];
+  /** Indexes of the columns shown by the view, in display order. */
+  display: number[];
   /** Every row of the file. */
   rows: Row[];
   /** Rows left after search, filters and sort. */

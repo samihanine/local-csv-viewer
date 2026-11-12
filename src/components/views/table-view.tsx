@@ -1,8 +1,11 @@
 import {
   ArrowDownIcon,
+  ArrowLeftIcon,
+  ArrowRightIcon,
   ArrowUpIcon,
   CheckIcon,
   Columns3Icon,
+  EyeOffIcon,
   ListFilterIcon,
   Maximize2Icon,
   PlusIcon,
@@ -10,6 +13,7 @@ import {
   XIcon,
 } from "lucide-react";
 import { memo, useMemo, useState } from "react";
+import { useColumnLayout } from "@/components/columns-menu";
 import { CellValue, OptionPicker, TypeIconFor } from "@/components/fields";
 import { MarkdownEditor } from "@/components/markdown-editor";
 import {
@@ -47,6 +51,7 @@ const cellClass =
 
 function HeaderCell({ column, index, width }: { column: string; index: number; width: number }) {
   const { types, state, setViewState, setColumnSchema, editFilter, openSchema } = useView();
+  const layout = useColumnLayout();
   const schema = types[index] as ColumnSchema;
   const sorted = state.sort?.column === column ? state.sort : undefined;
   const filtered = isActive(own(state.filters, column), schema.type);
@@ -83,6 +88,16 @@ function HeaderCell({ column, index, width }: { column: string; index: number; w
           <ListFilterIcon /> Filtrer
         </DropdownMenuItem>
         <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => layout.nudge(column, -1)}>
+          <ArrowLeftIcon /> Déplacer à gauche
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => layout.nudge(column, 1)}>
+          <ArrowRightIcon /> Déplacer à droite
+        </DropdownMenuItem>
+        <DropdownMenuItem disabled={!layout.canHide(column)} onClick={() => layout.toggle(column)}>
+          <EyeOffIcon /> Masquer la colonne
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuLabel>Type de colonne</DropdownMenuLabel>
         {COLUMN_TYPES.map((type) => (
           <DropdownMenuItem key={type} onClick={() => setColumnSchema(column, { ...schema, type })}>
@@ -110,7 +125,7 @@ type CellProps = {
 };
 
 const Cell = memo(function Cell({ rowId, column, value, schema, name, editing, setEditing }: CellProps) {
-  const { updateCell, setColumnSchema, columns } = useView();
+  const { updateCell, setColumnSchema, display: shown } = useView();
   const commit = (next: string) => updateCell(rowId, column, next);
   const me = { id: rowId, column };
   const display = <CellValue value={value} schema={schema} />;
@@ -171,8 +186,8 @@ const Cell = memo(function Cell({ rowId, column, value, schema, name, editing, s
           event.currentTarget.blur();
         }
         if (event.key === "Tab") {
-          const next = column + (event.shiftKey ? -1 : 1);
-          if (next < 0 || next >= columns.length) return;
+          const next = shown[shown.indexOf(column) + (event.shiftKey ? -1 : 1)];
+          if (next === undefined) return;
           event.preventDefault();
           event.currentTarget.blur();
           setEditing({ id: rowId, column: next });
@@ -185,7 +200,7 @@ const Cell = memo(function Cell({ rowId, column, value, schema, name, editing, s
 type RowProps = { row: Row; index: number; widths: number[]; editingColumn: number; setEditing: (e: Editing) => void };
 
 const TableRow = memo(function TableRow({ row, index, widths, editingColumn, setEditing }: RowProps) {
-  const { columns, types, openRow, removeRow } = useView();
+  const { columns, types, display, openRow, removeRow } = useView();
   return (
     <div className="group absolute left-0 flex border-b" style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}>
       <div
@@ -214,12 +229,12 @@ const TableRow = memo(function TableRow({ row, index, widths, editingColumn, set
           </button>
         </span>
       </div>
-      {columns.map((name, column) => (
-        <div key={name} style={{ width: widths[column] }} className="shrink-0 border-r">
+      {display.map((column) => (
+        <div key={columns[column]} style={{ width: widths[column] }} className="shrink-0 border-r">
           <Cell
             rowId={row.id}
             column={column}
-            name={name}
+            name={columns[column] ?? ""}
             value={row.cells[column] ?? ""}
             schema={types[column] as ColumnSchema}
             editing={editingColumn === column}
@@ -232,11 +247,11 @@ const TableRow = memo(function TableRow({ row, index, widths, editingColumn, set
 });
 
 export function TableView() {
-  const { columns, types, visible, rows, createRow, openRow, state } = useView();
+  const { columns, types, display, visible, rows, createRow, openRow, state } = useView();
   const [editing, setEditing] = useState<Editing>(null);
   const { ref, start, end } = useVirtual(visible.length, ROW_HEIGHT);
   const widths = useMemo(() => types.map((schema) => WIDTHS[schema.type]), [types]);
-  const total = GUTTER + widths.reduce((sum, width) => sum + width, 0);
+  const total = GUTTER + display.reduce((sum, index) => sum + (widths[index] ?? 0), 0);
   const narrowed = visible.length !== rows.length || !!state.sort;
 
   const add = () => {
@@ -253,8 +268,8 @@ export function TableView() {
       <div style={{ width: total }} className="min-w-full">
         <div className="bg-background text-muted-foreground sticky top-0 z-20 flex h-10 border-b">
           <div style={{ width: GUTTER }} className="bg-background sticky left-0 z-10 shrink-0 border-r" />
-          {columns.map((column, index) => (
-            <HeaderCell key={column} column={column} index={index} width={widths[index] ?? 0} />
+          {display.map((index) => (
+            <HeaderCell key={columns[index]} column={columns[index] ?? ""} index={index} width={widths[index] ?? 0} />
           ))}
         </div>
         <div className="relative" style={{ height: visible.length * ROW_HEIGHT }}>

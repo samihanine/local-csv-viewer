@@ -5,7 +5,24 @@ export const MODES = ["table", "detail", "kanban", "gallery"] as const;
 export type Mode = (typeof MODES)[number];
 
 /** What a saved view remembers. */
-export type ViewState = { mode: Mode; search: string; filters: Filters; sort?: Sort; groupBy?: string };
+/** `order` and `hidden` only change how the view shows columns: the CSV keeps its own order. */
+export type ViewState = {
+  mode: Mode;
+  search: string;
+  filters: Filters;
+  sort?: Sort;
+  groupBy?: string;
+  order?: string[];
+  hidden?: string[];
+};
+
+/** Indexes of the columns a view shows, in display order. Unlisted columns come last; unknown names are ignored. */
+export function displayColumns(columns: string[], { order = [], hidden = [] }: Pick<ViewState, "order" | "hidden">) {
+  const listed = order.map((name) => columns.indexOf(name)).filter((index) => index >= 0);
+  const rest = columns.map((_, index) => index).filter((index) => !listed.includes(index));
+  const hiddenSet = new Set(hidden);
+  return [...new Set([...listed, ...rest])].filter((index) => !hiddenSet.has(columns[index] ?? ""));
+}
 export type SavedView = { id: string; name: string; state: ViewState };
 
 /** Everything known about one CSV, except its file handle (kept in IndexedDB under the same id). */

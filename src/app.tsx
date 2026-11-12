@@ -29,7 +29,7 @@ import { useTheme } from "@/lib/theme";
 import { type SaveState, useWorkspace } from "@/lib/use-workspace";
 import { baseName, cn, downloadBlob, formatNumber } from "@/lib/utils";
 import { type ViewContext, ViewProvider } from "@/lib/view-context";
-import { defaultState, MODES, sameState, type ViewState } from "@/lib/workspace-store";
+import { defaultState, displayColumns, MODES, sameState, type ViewState } from "@/lib/workspace-store";
 import { exportXlsx, XLSX_MAX_ROWS } from "@/lib/xlsx";
 
 const NO_COLUMNS: string[] = [];
@@ -82,6 +82,7 @@ export function App() {
   const { setViewState, setSchema, updateCell, addRow, deleteRow, insertRow } = workspace;
 
   const types = useMemo(() => columns.map((column) => columnSchema(schema, column)), [columns, schema]);
+  const display = useMemo(() => displayColumns(columns, state), [columns, state]);
   const search = useDeferredValue(state.search);
   const visible = useMemo(
     () => runQuery(columns, rows, schema, { search, filters: state.filters, sort: state.sort }),
@@ -111,6 +112,7 @@ export function App() {
     () => ({
       columns,
       types,
+      display,
       rows,
       visible,
       state,
@@ -135,6 +137,7 @@ export function App() {
     [
       columns,
       types,
+      display,
       rows,
       visible,
       state,
