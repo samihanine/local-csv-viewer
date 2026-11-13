@@ -39,7 +39,8 @@ export type FileEntry = {
 
 export type Registry = { files: FileEntry[]; activeId?: string };
 
-const KEY = "local-csv-viewer:v1";
+export const REGISTRY_KEY = "local-csv-viewer:v1";
+const KEY = REGISTRY_KEY;
 
 export const defaultState = (): ViewState => ({ mode: "table", search: "", filters: {} });
 

@@ -14,9 +14,17 @@ export type ViewContext = {
   display: number[];
   /** Every row of the file. */
   rows: Row[];
-  /** Rows left after search, filters and sort. */
+  /** Rows left after search, filters and sort. Cells hold inherited values. */
   visible: Row[];
   state: ViewState;
+  /** Which cells of a row come from its parent. */
+  inherited: Map<number, boolean[]>;
+  /** Row id → parent row id. */
+  parentOf: Map<number, number>;
+  /** Value of the key column → row: what a parent cell points to. */
+  byKey: Map<string, Row>;
+  /** Index of the key column (first identifier column, or the title). */
+  keyColumn: number;
   selectedId: number | undefined;
   setViewState: (patch: Partial<ViewState>) => void;
   updateCell: (rowId: number, column: number, value: string) => void;

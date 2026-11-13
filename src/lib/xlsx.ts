@@ -16,7 +16,14 @@ const HEADER_HEIGHT = 24;
 const ROW_HEIGHT = 48;
 
 /** Column widths in characters, by type. */
-export const COLUMN_WIDTHS: Record<ColumnType, number> = { id: 12, date: 14, select: 20, text: 28, longtext: 60 };
+export const COLUMN_WIDTHS: Record<ColumnType, number> = {
+  id: 12,
+  parent: 14,
+  date: 14,
+  select: 20,
+  text: 28,
+  longtext: 120,
+};
 
 // Cell style ids, matching the order of <cellXfs> below.
 const STYLE = { header: 1, text: 2, date: 3, title: 4, titleDate: 5 };
@@ -190,7 +197,11 @@ export function buildXlsx(columns: string[], rows: Row[], schema: Schema) {
   const lastColumn = columnLetter(Math.max(columns.length, 1) - 1);
   const ref = `A1:${lastColumn}${lastRow}`;
   const cols = types
-    .map((type, c) => `<col min="${c + 1}" max="${c + 1}" width="${COLUMN_WIDTHS[type.type]}" customWidth="1"/>`)
+    // The title column is as wide as a long text.
+    .map((type, c) => {
+      const width = c === title ? COLUMN_WIDTHS.longtext : COLUMN_WIDTHS[type.type];
+      return `<col min="${c + 1}" max="${c + 1}" width="${width}" customWidth="1"/>`;
+    })
     .join("");
   const dataValidations = validations.length
     ? `<dataValidations count="${validations.length}">${validations.join("")}</dataValidations>`

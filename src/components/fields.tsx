@@ -3,6 +3,7 @@ import {
   CheckIcon,
   CircleChevronDownIcon,
   HashIcon,
+  ListTreeIcon,
   PlusIcon,
   TextAlignStartIcon,
   TypeIcon,
@@ -10,6 +11,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 import { MarkdownEditor } from "@/components/markdown-editor";
+import { ParentPicker, ParentValue } from "@/components/parent-field";
 import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,6 +34,7 @@ const TYPE_ICONS = {
   date: CalendarIcon,
   select: CircleChevronDownIcon,
   id: HashIcon,
+  parent: ListTreeIcon,
 };
 
 export function TypeIconFor({ type, className }: { type: ColumnType; className?: string }) {
@@ -65,6 +68,7 @@ export function CellValue({ value, schema }: { value: string; schema: ColumnSche
     return <span className="truncate tabular-nums">{displayDate(value, schema.dateFormat)}</span>;
   if (schema.type === "id")
     return <span className="text-muted-foreground truncate font-mono text-[12.5px]">{value}</span>;
+  if (schema.type === "parent") return <ParentValue value={value} />;
   return <span className="truncate">{schema.type === "longtext" ? plainText(value) : value}</span>;
 }
 
@@ -210,11 +214,36 @@ type FieldProps = {
   onChange: (value: string) => void;
   onSchemaChange: (schema: ColumnSchema) => void;
   label: string;
+  /** The row being edited, needed to pick a parent. */
+  rowId: number;
 };
 
-/** Form control for one cell, by column type. Used by the detail view. */
-export function FieldEditor({ value, schema, onChange, onSchemaChange, label }: FieldProps) {
+/** Form control for one cell, by column type. Used by the detail panel. */
+export function FieldEditor({ value, schema, onChange, onSchemaChange, label, rowId }: FieldProps) {
   const [open, setOpen] = useState(false);
+
+  if (schema.type === "parent")
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          aria-label={label}
+          className="border-input hover:bg-muted/50 focus-visible:border-ring focus-visible:ring-ring/50 flex h-9 w-full max-w-sm min-w-0 items-center gap-2 rounded-lg border px-2.5 text-left outline-none focus-visible:ring-3"
+        >
+          {value ? <ParentValue value={value} /> : <span className="text-muted-foreground">Aucun parent</span>}
+          <CircleChevronDownIcon className="text-muted-foreground ml-auto size-4 shrink-0" />
+        </PopoverTrigger>
+        <PopoverContent className="w-80 p-2">
+          <ParentPicker
+            rowId={rowId}
+            value={value}
+            onPick={(next) => {
+              onChange(next);
+              setOpen(false);
+            }}
+          />
+        </PopoverContent>
+      </Popover>
+    );
 
   if (schema.type === "id")
     return (

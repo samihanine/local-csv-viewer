@@ -30,6 +30,8 @@ import type { Row } from "@/lib/csv";
 import { runQuery } from "@/lib/query";
 import { type ColumnSchema, columnSchema, own, titleIndex } from "@/lib/schema";
 import { useTheme } from "@/lib/theme";
+import { keyIndex, resolveTree } from "@/lib/tree";
+import { initialHash, onHashChange, type Page, updateHash } from "@/lib/url-state";
 import { useWorkspace } from "@/lib/use-workspace";
 import { baseName, cn, downloadBlob, formatNumber } from "@/lib/utils";
 import { type ViewContext, ViewProvider } from "@/lib/view-context";
@@ -42,7 +44,6 @@ const DEFAULT_STATE: ViewState = defaultState();
 
 const VIEWS = { table: TableView, kanban: KanbanView, gallery: GalleryView, gantt: GanttView };
 
-type Page = "csv" | "excel";
 const PAGE_KEY = "local-csv-viewer:page";
 
 const PAGES: { page: Page; label: string; icon: typeof FileSpreadsheetIcon; className: string }[] = [
@@ -98,7 +99,9 @@ function Rail({ page, onPage }: { page: Page; onPage: (page: Page) => void }) {
   );
 }
 
+/** The tool named in the address wins; otherwise the last one used. */
 const initialPage = (): Page => {
+  if (initialHash.page) return initialHash.page;
   try {
     return localStorage.getItem(PAGE_KEY) === "excel" ? "excel" : "csv";
   } catch {
@@ -108,6 +111,8 @@ const initialPage = (): Page => {
 
 export function App() {
   const [page, setPage] = useState<Page>(initialPage);
+  useEffect(() => updateHash({ page }), [page]);
+  useEffect(() => onHashChange((address) => address.page && setPage(address.page)), []);
   const choose = (next: Page) => {
     setPage(next);
     try {
@@ -134,7 +139,8 @@ function CsvWorkspace({ hidden }: { hidden: boolean }) {
 
   const ready = status === "ready" && !!data && !!entry;
   const columns = data?.columns ?? NO_COLUMNS;
-  const rows = data?.rows ?? NO_ROWS;
+  /** Rows as in the file, used to undo a deletion. */
+  const rawRows = data?.rows ?? NO_ROWS;
   const { schema, dirty, saving, save, discard, refresh, diskChanged } = workspace;
   const state = entry?.state ?? DEFAULT_STATE;
   const { setViewState, setSchema, updateCell, addRow, deleteRow, insertRow } = workspace;
@@ -160,10 +166,14 @@ function CsvWorkspace({ hidden }: { hidden: boolean }) {
   const types = useMemo(() => columns.map((column) => columnSchema(schema, column)), [columns, schema]);
   const display = useMemo(() => displayColumns(columns, state), [columns, state]);
   const title = useMemo(() => titleIndex(columns, schema), [columns, schema]);
+  // Children show the values of their parent in their empty cells; views, filters and the export see them too.
+  const tree = useMemo(() => resolveTree(rawRows, types, title), [rawRows, types, title]);
+  const rows = tree.rows;
+  const keyColumn = keyIndex(types, title);
   const search = useDeferredValue(state.search);
   const visible = useMemo(
-    () => runQuery(columns, rows, schema, { search, filters: state.filters, sort: state.sort }),
-    [columns, rows, schema, search, state.filters, state.sort],
+    () => runQuery(columns, tree.rows, schema, { search, filters: state.filters, sort: state.sort }),
+    [columns, tree.rows, schema, search, state.filters, state.sort],
   );
 
   const openRow = useCallback(
@@ -174,13 +184,13 @@ function CsvWorkspace({ hidden }: { hidden: boolean }) {
 
   const removeRow = useCallback(
     (rowId: number) => {
-      const index = rows.findIndex((row) => row.id === rowId);
-      const row = rows[index];
+      const index = rawRows.findIndex((row) => row.id === rowId);
+      const row = rawRows[index];
       if (!row) return;
       deleteRow(rowId);
       toast("Ligne supprimée", { action: { label: "Annuler", onClick: () => insertRow(row, index) } });
     },
-    [rows, deleteRow, insertRow],
+    [rawRows, deleteRow, insertRow],
   );
 
   const view = useMemo<ViewContext>(
@@ -192,6 +202,10 @@ function CsvWorkspace({ hidden }: { hidden: boolean }) {
       rows,
       visible,
       state,
+      inherited: tree.inherited,
+      parentOf: tree.parentOf,
+      byKey: tree.byKey,
+      keyColumn,
       selectedId,
       setViewState,
       updateCell,
@@ -219,6 +233,8 @@ function CsvWorkspace({ hidden }: { hidden: boolean }) {
       rows,
       visible,
       state,
+      tree,
+      keyColumn,
       selectedId,
       schema,
       setViewState,

@@ -1,9 +1,9 @@
 import { CalendarIcon } from "lucide-react";
 import { OptionBadge, optionColor } from "@/components/fields";
-import { rowTitle } from "@/components/views/detail-panel";
 import type { Row } from "@/lib/csv";
 import { plainText } from "@/lib/markdown";
 import { type ColumnSchema, displayDate } from "@/lib/schema";
+import { rowTitle } from "@/lib/tree";
 import { useView } from "@/lib/view-context";
 
 const MAX_TEXTS = 2;

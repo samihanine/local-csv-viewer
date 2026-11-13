@@ -76,10 +76,10 @@ describe("buildXlsx", () => {
     expect(sheet).toContain('<tableParts count="1">');
   });
 
-  it("sizes columns by type and rows uniformly", () => {
+  it("sizes columns by type, the title like a long text, and rows uniformly", () => {
     expect([...sheet.matchAll(/<col [^>]*width="(\d+)"/g)].map((match) => match[1])).toEqual([
-      "28",
-      "60",
+      "120", // title column, as wide as a long text
+      "120",
       "14",
       "20",
       "28",

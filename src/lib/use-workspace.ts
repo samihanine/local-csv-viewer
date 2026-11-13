@@ -15,12 +15,15 @@ import {
 } from "@/lib/files";
 import type { ImportMode, Table } from "@/lib/import";
 import { columnSchema, formatId, idNumber, normalizeSchema, type Schema } from "@/lib/schema";
+import { initialHash, onHashChange, type UrlState, updateHash } from "@/lib/url-state";
 import {
   defaultState,
   type FileEntry,
   loadRegistry,
   newEntry,
+  REGISTRY_KEY,
   type Registry,
+  sameState,
   saveRegistry,
   type ViewState,
 } from "@/lib/workspace-store";
@@ -53,8 +56,31 @@ function assignIds(columns: string[], schema: Schema, all: Row[], rows: Row[]) {
   });
 }
 
+/** Applies an address (file, saved view, view settings) to the registry. Returns what could not be applied. */
+function applyAddress(registry: Registry, address: UrlState): { registry: Registry; errors: string[] } {
+  const errors: string[] = [];
+  let { activeId } = registry;
+  if (address.file) {
+    if (registry.files.some((file) => file.id === address.file)) activeId = address.file;
+    else errors.push("ce fichier n'est pas connu de ce navigateur");
+  }
+  const files = registry.files.map((file) => {
+    if (file.id !== activeId) return file;
+    const view = address.view ? file.views.find((candidate) => candidate.id === address.view) : undefined;
+    if (address.view && !view) errors.push("cette vue n'existe plus");
+    const state = address.state ?? view?.state;
+    if (!state && !address.view) return file;
+    return { ...file, activeViewId: view?.id, state: state ?? file.state };
+  });
+  return { registry: { files, activeId }, errors };
+}
+
+let reportedInitialHash = false;
+
+const LINK_ERROR = (errors: string[]) => `Lien partiellement ignoré : ${errors.join(", ")}.`;
+
 export function useWorkspace() {
-  const [registry, setRegistry] = useState<Registry>(loadRegistry);
+  const [registry, setRegistry] = useState<Registry>(() => applyAddress(loadRegistry(), initialHash).registry);
   const [status, setStatus] = useState<Status>("idle");
   const [data, setData] = useState<Dataset>();
   const [saved, setSaved] = useState<Dataset>();
@@ -65,11 +91,78 @@ export function useWorkspace() {
   const session = useRef<Session | undefined>(undefined);
   const pending = useRef<FileSystemFileHandle | undefined>(undefined);
 
-  useEffect(() => saveRegistry(registry), [registry]);
+  const registryRef = useRef(registry);
+  registryRef.current = registry;
+
+  // Shared data (files, schemas, saved views) is saved for every tab. When another tab saves it, this tab takes
+  // the new data but keeps its own file and view. That merge is not saved back, or two tabs would echo forever.
+  const skipSave = useRef(false);
+  useEffect(() => {
+    if (skipSave.current) {
+      skipSave.current = false;
+      return;
+    }
+    saveRegistry(registry);
+  }, [registry]);
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key !== REGISTRY_KEY) return;
+      const incoming = loadRegistry();
+      skipSave.current = true;
+      setRegistry((current) => {
+        const mine = current.files.find((file) => file.id === current.activeId);
+        return {
+          activeId: incoming.files.some((file) => file.id === current.activeId) ? current.activeId : incoming.activeId,
+          files: incoming.files.map((file) =>
+            mine && file.id === mine.id ? { ...file, state: mine.state, activeViewId: mine.activeViewId } : file,
+          ),
+        };
+      });
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  // Problems with the address the page was opened with, reported once.
+  useEffect(() => {
+    if (reportedInitialHash) return;
+    reportedInitialHash = true;
+    const { errors } = applyAddress(loadRegistry(), initialHash);
+    const all = [...initialHash.errors, ...errors];
+    if (all.length) toast.warning(LINK_ERROR(all));
+  }, []);
+
+  // An address typed or pasted in this tab.
+  useEffect(
+    () =>
+      onHashChange((address) => {
+        const result = applyAddress(registryRef.current, address);
+        setRegistry(result.registry);
+        const all = [...address.errors, ...result.errors];
+        if (!all.length) return;
+        toast.warning(LINK_ERROR(all));
+        // Rewrites the address with what was kept.
+        const entry = result.registry.files.find((file) => file.id === result.registry.activeId);
+        updateHash({
+          file: result.registry.activeId,
+          view: entry?.views.some((view) => view.id === address.view) ? address.view : undefined,
+          state: address.state,
+        });
+      }),
+    [],
+  );
 
   const { activeId } = registry;
   const entry = useMemo(() => registry.files.find((file) => file.id === activeId), [registry.files, activeId]);
   const schema = draftSchema ?? entry?.schema ?? {};
+
+  // The address follows the file and view shown, so a tab can be reloaded, duplicated or shared as is.
+  useEffect(() => {
+    const view = entry?.views.find((candidate) => candidate.id === entry.activeViewId);
+    const state = entry?.state;
+    const plain = !state || (view ? sameState(view.state, state) : sameState(defaultState(), state));
+    updateHash({ file: activeId, view: view?.id, state: plain ? undefined : state });
+  }, [activeId, entry]);
   const schemaRef = useRef(schema);
   schemaRef.current = schema;
 

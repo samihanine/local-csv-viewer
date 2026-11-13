@@ -1,6 +1,6 @@
 import type { Row } from "@/lib/csv";
 
-export const COLUMN_TYPES = ["text", "longtext", "date", "select", "id"] as const;
+export const COLUMN_TYPES = ["text", "longtext", "date", "select", "id", "parent"] as const;
 export type ColumnType = (typeof COLUMN_TYPES)[number];
 
 export const DATE_FORMATS = ["iso", "dmy", "mdy"] as const;
@@ -40,6 +40,7 @@ export const TYPE_LABELS: Record<ColumnType, string> = {
   date: "Date",
   select: "Options",
   id: "Identifiant",
+  parent: "Parent",
 };
 
 export const DATE_FORMAT_LABELS: Record<DateFormat, string> = {
@@ -248,8 +249,10 @@ function detectType(
   return { type: isLongText(filled) ? "longtext" : "text" };
 }
 
+const PARENT_NAME = /(^|[\s_-])(parent|parent_id|mere|mère|epic)([\s_-]|$)/i;
+
 export function detectSchema(columns: string[], rows: Row[], previous: Schema = {}): Schema {
-  return Object.fromEntries(
+  const detected: Schema = Object.fromEntries(
     columns.map((column, index) => [
       column,
       detectColumn(
@@ -260,6 +263,18 @@ export function detectSchema(columns: string[], rows: Row[], previous: Schema = 
       ),
     ]),
   );
+  // A column named like a parent whose values are all identifiers of other rows points to a parent row.
+  const key = columns.findIndex((column) => own(detected, column)?.type === "id");
+  if (key >= 0) {
+    const ids = new Set(rows.map((row) => (row.cells[key] ?? "").trim()).filter(Boolean));
+    columns.forEach((column, index) => {
+      if (index === key || !PARENT_NAME.test(column)) return;
+      const values = rows.map((row) => (row.cells[index] ?? "").trim()).filter(Boolean);
+      if (values.length && values.every((value) => ids.has(value)))
+        detected[column] = { type: "parent", ...(own(previous, column)?.title ? { title: true } : {}) };
+    });
+  }
+  return detected;
 }
 
 // ---------------------------------------------------------------------------------------------------------------------

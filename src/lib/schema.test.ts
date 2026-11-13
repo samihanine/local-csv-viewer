@@ -155,3 +155,18 @@ describe("normalizeSchema", () => {
     expect(titleIndex(["x"], {})).toBe(0);
   });
 });
+
+describe("parent detection", () => {
+  it("finds a parent column pointing to identifiers", () => {
+    const rows = toRows(
+      [
+        ["1", "Epic", ""],
+        ["2", "Story", "1"],
+        ["3", "Task", "2"],
+      ],
+      3,
+    );
+    const schema = detectSchema(["id", "name", "parent_id"], rows);
+    expect(schema.parent_id).toEqual({ type: "parent" });
+  });
+});

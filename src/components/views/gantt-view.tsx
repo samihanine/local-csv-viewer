@@ -1,9 +1,9 @@
 import { ChartGanttIcon } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { PhasesMenu, usePhases } from "@/components/phases-menu";
-import { rowTitle } from "@/components/views/detail-panel";
 import type { Row } from "@/lib/csv";
 import { type Bar, DAY, fromDay, rowBars, toDay } from "@/lib/gantt";
+import { rowTitle } from "@/lib/tree";
 import { cn } from "@/lib/utils";
 import { useView } from "@/lib/view-context";
 
