@@ -13,7 +13,6 @@ import {
   LayoutGridIcon,
   type LucideIcon,
   PlusIcon,
-  ShieldCheckIcon,
   SquareKanbanIcon,
   Table2Icon,
   Trash2Icon,
@@ -207,11 +206,6 @@ export function Sidebar(props: SidebarProps) {
           </Section>
         </>
       )}
-
-      <p className="text-muted-foreground mt-auto flex items-start gap-2 px-1 text-xs leading-relaxed">
-        <ShieldCheckIcon className="mt-0.5 size-3.5 shrink-0" />
-        Tout reste sur cet ordinateur : aucune donnée n'est envoyée sur Internet.
-      </p>
     </aside>
   );
 }
