@@ -1,28 +1,30 @@
 import type { Filters, Sort } from "@/lib/query";
-import type { Schema } from "@/lib/schema";
+import type { OptionColor, Schema } from "@/lib/schema";
 
-export const MODES = ["table", "detail", "kanban", "gallery"] as const;
+export const MODES = ["table", "kanban", "gallery", "gantt"] as const;
 export type Mode = (typeof MODES)[number];
 
-/** What a saved view remembers. */
-/** `order` and `hidden` only change how the view shows columns: the CSV keeps its own order. */
+/** A bar of the gantt: one date column for the start, one for the end. */
+export type Phase = { id: string; name: string; start: string; end: string; color: OptionColor };
+
+/** What a saved view remembers. `hidden` only changes what the view shows: the CSV keeps every column. */
 export type ViewState = {
   mode: Mode;
   search: string;
   filters: Filters;
   sort?: Sort;
   groupBy?: string;
-  order?: string[];
   hidden?: string[];
+  /** Gantt phases. Undefined means "guess them from the date columns". */
+  phases?: Phase[];
 };
 
-/** Indexes of the columns a view shows, in display order. Unlisted columns come last; unknown names are ignored. */
-export function displayColumns(columns: string[], { order = [], hidden = [] }: Pick<ViewState, "order" | "hidden">) {
-  const listed = order.map((name) => columns.indexOf(name)).filter((index) => index >= 0);
-  const rest = columns.map((_, index) => index).filter((index) => !listed.includes(index));
+/** Indexes of the columns a view shows, in file order. */
+export function displayColumns(columns: string[], { hidden = [] }: Pick<ViewState, "hidden">) {
   const hiddenSet = new Set(hidden);
-  return [...new Set([...listed, ...rest])].filter((index) => !hiddenSet.has(columns[index] ?? ""));
+  return columns.map((_, index) => index).filter((index) => !hiddenSet.has(columns[index] ?? ""));
 }
+
 export type SavedView = { id: string; name: string; state: ViewState };
 
 /** Everything known about one CSV, except its file handle (kept in IndexedDB under the same id). */
@@ -55,8 +57,19 @@ export function loadRegistry(): Registry {
     if (raw && typeof raw === "object" && Array.isArray((raw as Registry).files)) {
       const { files, activeId } = raw as Registry;
       const valid = files.filter((file) => file && typeof file.id === "string" && typeof file.name === "string");
+      // Older versions had a "detail" mode, now a side panel.
+      const fixState = (state: ViewState): ViewState => ({
+        ...defaultState(),
+        ...state,
+        mode: MODES.includes(state?.mode) ? state.mode : "table",
+      });
       return {
-        files: valid.map((file) => ({ ...newEntry(file.id, file.name), ...file })),
+        files: valid.map((file) => ({
+          ...newEntry(file.id, file.name),
+          ...file,
+          state: fixState(file.state),
+          views: (file.views ?? []).map((view) => ({ ...view, state: fixState(view.state) })),
+        })),
         activeId: valid.some((file) => file.id === activeId) ? activeId : valid[0]?.id,
       };
     }

@@ -8,6 +8,8 @@ export type ViewContext = {
   columns: string[];
   /** Schema of each column, in column order. */
   types: ColumnSchema[];
+  /** Index of the column that names a row. */
+  title: number;
   /** Indexes of the columns shown by the view, in display order. */
   display: number[];
   /** Every row of the file. */
@@ -25,9 +27,11 @@ export type ViewContext = {
   newRow: (values?: Record<number, string>) => void;
   /** Deletes a row, with an undo toast. */
   removeRow: (rowId: number) => void;
-  /** Shows a row in the detail view. */
+  /** Shows a row in the side panel, or closes the panel when it already shows it. */
   openRow: (rowId: number) => void;
+  /** Shows a row in the side panel. */
   selectRow: (rowId: number) => void;
+  closeRow: () => void;
   /** Opens the filter editor of a column. */
   editFilter: (column: string) => void;
   openSchema: () => void;

@@ -2,6 +2,7 @@ import {
   CalendarIcon,
   CheckIcon,
   CircleChevronDownIcon,
+  HashIcon,
   PlusIcon,
   TextAlignStartIcon,
   TypeIcon,
@@ -21,10 +22,17 @@ import {
   nextColor,
   type OptionColor,
   parseDate,
+  sortOptions,
 } from "@/lib/schema";
 import { cn } from "@/lib/utils";
 
-const TYPE_ICONS = { text: TypeIcon, longtext: TextAlignStartIcon, date: CalendarIcon, select: CircleChevronDownIcon };
+const TYPE_ICONS = {
+  text: TypeIcon,
+  longtext: TextAlignStartIcon,
+  date: CalendarIcon,
+  select: CircleChevronDownIcon,
+  id: HashIcon,
+};
 
 export function TypeIconFor({ type, className }: { type: ColumnType; className?: string }) {
   const Icon = TYPE_ICONS[type];
@@ -55,6 +63,8 @@ export function CellValue({ value, schema }: { value: string; schema: ColumnSche
   if (schema.type === "select") return <OptionBadge value={value} color={optionColor(schema, value)} />;
   if (schema.type === "date")
     return <span className="truncate tabular-nums">{displayDate(value, schema.dateFormat)}</span>;
+  if (schema.type === "id")
+    return <span className="text-muted-foreground truncate font-mono text-[12.5px]">{value}</span>;
   return <span className="truncate">{schema.type === "longtext" ? plainText(value) : value}</span>;
 }
 
@@ -133,7 +143,7 @@ type OptionPickerProps = {
 /** Searchable list of the options of a column. Typing a new name offers to create it. */
 export function OptionPicker({ schema, value, onPick, onSchemaChange }: OptionPickerProps) {
   const [search, setSearch] = useState("");
-  const options = schema.options ?? [];
+  const options = sortOptions(schema.options ?? []);
   const term = search.trim();
   const matches = options.filter((option) => option.value.toLowerCase().includes(term.toLowerCase()));
   const canCreate = term !== "" && !options.some((option) => option.value.toLowerCase() === term.toLowerCase());
@@ -205,6 +215,16 @@ type FieldProps = {
 /** Form control for one cell, by column type. Used by the detail view. */
 export function FieldEditor({ value, schema, onChange, onSchemaChange, label }: FieldProps) {
   const [open, setOpen] = useState(false);
+
+  if (schema.type === "id")
+    return (
+      <span
+        title="Identifiant attribué automatiquement"
+        className="bg-muted/60 text-muted-foreground flex h-9 w-fit min-w-24 items-center rounded-lg px-3 font-mono text-[13px]"
+      >
+        {value || "—"}
+      </span>
+    );
 
   if (schema.type === "longtext") return <MarkdownEditor value={value} onCommit={onChange} previewFirst />;
 

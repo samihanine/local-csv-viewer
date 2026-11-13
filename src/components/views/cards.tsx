@@ -1,6 +1,6 @@
 import { CalendarIcon } from "lucide-react";
 import { OptionBadge, optionColor } from "@/components/fields";
-import { rowTitle } from "@/components/views/detail-view";
+import { rowTitle } from "@/components/views/detail-panel";
 import type { Row } from "@/lib/csv";
 import { plainText } from "@/lib/markdown";
 import { type ColumnSchema, displayDate } from "@/lib/schema";
@@ -8,14 +8,14 @@ import { useView } from "@/lib/view-context";
 
 const MAX_TEXTS = 2;
 
-/** Title (first column) and a compact summary of the other columns. Shared by the kanban and the gallery. */
+/** Title (the starred column) and a compact summary of the other columns. Shared by the kanban and the gallery. */
 export function CardContent({ row, hidden = -1, excerpt = false }: { row: Row; hidden?: number; excerpt?: boolean }) {
-  const { columns, types, display } = useView();
+  const { columns, types, display, title } = useView();
   const fields = columns
     .map((name, index) => ({ name, index, value: row.cells[index] ?? "", schema: types[index] as ColumnSchema }))
     .filter(
       (field) =>
-        field.index > 0 && field.index !== hidden && display.includes(field.index) && field.value.trim() !== "",
+        field.index !== title && field.index !== hidden && display.includes(field.index) && field.value.trim() !== "",
     );
   const long = excerpt ? fields.find((field) => field.schema.type === "longtext") : undefined;
   const texts = fields.filter((field) => field.schema.type === "text").slice(0, MAX_TEXTS);
@@ -24,7 +24,7 @@ export function CardContent({ row, hidden = -1, excerpt = false }: { row: Row; h
 
   return (
     <>
-      <p className="line-clamp-2 font-medium break-words">{rowTitle(row.cells)}</p>
+      <p className="line-clamp-2 font-medium break-words">{rowTitle(row, title)}</p>
       {long && <p className="text-muted-foreground line-clamp-3 text-[13px] break-words">{plainText(long.value)}</p>}
       {texts.map((field) => (
         <p key={field.name} className="text-muted-foreground truncate text-xs" title={field.name}>

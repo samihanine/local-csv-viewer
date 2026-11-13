@@ -1,6 +1,6 @@
 import type { Row } from "@/lib/csv";
 
-export const COLUMN_TYPES = ["text", "longtext", "date", "select"] as const;
+export const COLUMN_TYPES = ["text", "longtext", "date", "select", "id"] as const;
 export type ColumnType = (typeof COLUMN_TYPES)[number];
 
 export const DATE_FORMATS = ["iso", "dmy", "mdy"] as const;
@@ -21,7 +21,17 @@ export const OPTION_COLORS = [
 export type OptionColor = (typeof OPTION_COLORS)[number];
 
 export type SelectOption = { value: string; color: OptionColor };
-export type ColumnSchema = { type: ColumnType; options?: SelectOption[]; dateFormat?: DateFormat };
+export type ColumnSchema = {
+  type: ColumnType;
+  options?: SelectOption[];
+  dateFormat?: DateFormat;
+  /** Identifier columns: text written before the number, e.g. "T-". */
+  prefix?: string;
+  /** Identifier columns: minimum number of digits, padded with zeros. */
+  digits?: number;
+  /** The column whose value names a row (one per schema). */
+  title?: boolean;
+};
 export type Schema = Record<string, ColumnSchema>;
 
 export const TYPE_LABELS: Record<ColumnType, string> = {
@@ -29,6 +39,7 @@ export const TYPE_LABELS: Record<ColumnType, string> = {
   longtext: "Texte long",
   date: "Date",
   select: "Options",
+  id: "Identifiant",
 };
 
 export const DATE_FORMAT_LABELS: Record<DateFormat, string> = {
@@ -43,6 +54,55 @@ export const own = <T>(record: Record<string, T>, key: string): T | undefined =>
   Object.hasOwn(record, key) ? record[key] : undefined;
 
 export const columnSchema = (schema: Schema, column: string): ColumnSchema => own(schema, column) ?? DEFAULT_COLUMN;
+
+const collator = new Intl.Collator("fr", { numeric: true, sensitivity: "base" });
+
+/** Options are always listed in alphabetical order. */
+export const sortOptions = (options: SelectOption[]) => [...options].sort((a, b) => collator.compare(a.value, b.value));
+
+/** Index of the title column: the one marked with a star, or the first one. */
+export function titleIndex(columns: string[], schema: Schema) {
+  const index = columns.findIndex((column) => own(schema, column)?.title);
+  return Math.max(0, index);
+}
+
+/** Sorts options and keeps a single title column. */
+export function normalizeSchema(schema: Schema): Schema {
+  let titled = false;
+  return Object.fromEntries(
+    Object.entries(schema).map(([column, value]) => {
+      const next: ColumnSchema = { ...value };
+      if (next.options) next.options = sortOptions(next.options);
+      if (next.title && titled) delete next.title;
+      if (next.title) titled = true;
+      else delete next.title;
+      return [column, next];
+    }),
+  );
+}
+
+// ---------------------------------------------------------------------------------------------------------------------
+// Identifiers: text made of a prefix and a number, e.g. "T-007".
+
+export const MAX_DIGITS = 12;
+
+export const formatId = (n: number, { prefix = "", digits = 0 }: ColumnSchema) =>
+  `${prefix}${String(n).padStart(Math.min(digits, MAX_DIGITS), "0")}`;
+
+const escapeRegExp = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+/** Number part of an identifier, or undefined when the value does not follow the column format. */
+export function idNumber(value: string, { prefix = "" }: ColumnSchema) {
+  const match = new RegExp(`^${escapeRegExp(prefix)}(\\d+)$`).exec(value.trim());
+  return match ? Number(match[1]) : undefined;
+}
+
+/** The identifier following the largest one in `values`. */
+export function nextId(values: string[], schema: ColumnSchema) {
+  let max = 0;
+  for (const value of values) max = Math.max(max, idNumber(value, schema) ?? 0);
+  return formatId(max + 1, schema);
+}
 
 // Order in which colors are handed out: neighbours are far apart on the color wheel. Gray is kept for unknown values.
 const ASSIGN_ORDER: OptionColor[] = ["blue", "green", "amber", "red", "purple", "teal", "pink", "orange", "indigo"];
@@ -144,9 +204,36 @@ function detectOptions(values: string[]): string[] | undefined {
   return [...counts].sort((a, b) => b[1] - a[1]).map(([value]) => value);
 }
 
-export function detectColumn(values: string[], previous?: ColumnSchema, colorOffset = 0): ColumnSchema {
+const ID_NAME = /(^|[\s_-])(id|ref|réf|code|n°|num(ero|éro)?)([\s_-]|$)/i;
+const ID_VALUE = /^(\D*?)(\d+)$/;
+
+/** Unique values sharing a prefix and ending with a number, in a column named like an identifier or prefixed. */
+function detectId(values: string[], name: string): ColumnSchema | undefined {
+  if (values.length < 2 || new Set(values).size !== values.length) return;
+  const matches = values.map((value) => ID_VALUE.exec(value.trim()));
+  const prefix = matches[0]?.[1];
+  if (prefix === undefined || !matches.every((match) => match && match[1] === prefix)) return;
+  if (!prefix && !ID_NAME.test(name)) return;
+  const lengths = new Set(matches.map((match) => match?.[2]?.length));
+  const padded = lengths.size === 1 && matches.some((match) => match?.[2]?.startsWith("0"));
+  return { type: "id", prefix, digits: padded ? [...lengths][0] : 0 };
+}
+
+export function detectColumn(values: string[], previous?: ColumnSchema, colorOffset = 0, name = ""): ColumnSchema {
   const filled = values.filter((value) => value.trim() !== "").slice(0, SAMPLE);
+  const title = previous?.title ? { title: true } : {};
+  return { ...detectType(filled, previous, colorOffset, name), ...title };
+}
+
+function detectType(
+  filled: string[],
+  previous: ColumnSchema | undefined,
+  colorOffset: number,
+  name: string,
+): ColumnSchema {
   if (!filled.length) return previous ?? { type: "text" };
+  const id = detectId(filled, name);
+  if (id) return id;
   const dateFormat = detectDateFormat(filled);
   if (dateFormat) return { type: "date", dateFormat };
   const detected = detectOptions(filled);
@@ -156,7 +243,7 @@ export function detectColumn(values: string[], previous?: ColumnSchema, colorOff
       const known = previous?.options?.find((option) => option.value === value);
       options.push(known ?? { value, color: nextColor(options, colorOffset) });
     }
-    return { type: "select", options };
+    return { type: "select", options: sortOptions(options) };
   }
   return { type: isLongText(filled) ? "longtext" : "text" };
 }
@@ -169,6 +256,7 @@ export function detectSchema(columns: string[], rows: Row[], previous: Schema = 
         rows.map((row) => row.cells[index] ?? ""),
         own(previous, column),
         index * 4,
+        column,
       ),
     ]),
   );
@@ -194,6 +282,12 @@ function parseColumn(raw: unknown): ColumnSchema | undefined {
   if (!isRecord(raw) || !includes(COLUMN_TYPES, raw.type)) return;
   const column: ColumnSchema = { type: raw.type };
   if (raw.type === "date") column.dateFormat = includes(DATE_FORMATS, raw.dateFormat) ? raw.dateFormat : "iso";
+  if (raw.type === "id") {
+    column.prefix = typeof raw.prefix === "string" ? raw.prefix.slice(0, 20) : "";
+    const digits = Number(raw.digits);
+    column.digits = Number.isInteger(digits) ? Math.max(0, Math.min(MAX_DIGITS, digits)) : 0;
+  }
+  if (raw.title === true) column.title = true;
   if (raw.type === "select") {
     const seen = new Set<string>();
     column.options = (Array.isArray(raw.options) ? raw.options : []).flatMap((option): SelectOption[] => {
@@ -203,6 +297,7 @@ function parseColumn(raw: unknown): ColumnSchema | undefined {
         { value: option.value.slice(0, 200), color: includes(OPTION_COLORS, option.color) ? option.color : "gray" },
       ];
     });
+    column.options = sortOptions(column.options);
   }
   return column;
 }
@@ -221,5 +316,5 @@ export function parseSchemaFile(json: string): Schema {
     const column = parseColumn(value);
     if (column) schema[name] = column;
   }
-  return { ...schema };
+  return normalizeSchema({ ...schema });
 }

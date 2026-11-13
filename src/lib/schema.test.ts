@@ -5,8 +5,13 @@ import {
   detectSchema,
   displayDate,
   formatDate,
+  formatId,
+  idNumber,
+  nextId,
+  normalizeSchema,
   parseDate,
   parseSchemaFile,
+  titleIndex,
   toSchemaFile,
 } from "@/lib/schema";
 
@@ -35,10 +40,10 @@ describe("detectColumn", () => {
     expect(detectColumn(["01/25/2024", "02/03/2024"])).toEqual({ type: "date", dateFormat: "mdy" });
   });
 
-  it("finds options when few values come back, most frequent first", () => {
+  it("finds options when few values come back, in alphabetical order", () => {
     const detected = detectColumn(["Done", "Todo", "Done", "Doing", "Done", "Todo", "Doing"]);
     expect(detected.type).toBe("select");
-    expect(detected.options?.map((option) => option.value)).toEqual(["Done", "Todo", "Doing"]);
+    expect(detected.options?.map((option) => option.value)).toEqual(["Doing", "Done", "Todo"]);
     expect(new Set(detected.options?.map((option) => option.color)).size).toBe(3);
   });
 
@@ -102,5 +107,51 @@ describe("schema files", () => {
   it("rejects files that are not schemas", () => {
     expect(() => parseSchemaFile("nope")).toThrow();
     expect(() => parseSchemaFile("[]")).toThrow();
+  });
+});
+
+describe("identifiers", () => {
+  const schema = { type: "id" as const, prefix: "T-", digits: 3 };
+
+  it("formats with prefix and padding, as text", () => {
+    expect(formatId(1, schema)).toBe("T-001");
+    expect(formatId(1234, schema)).toBe("T-1234");
+    expect(formatId(7, { type: "id" })).toBe("7");
+  });
+
+  it("continues after the largest identifier, ignoring other values", () => {
+    expect(idNumber("T-012", schema)).toBe(12);
+    expect(idNumber("X-012", schema)).toBeUndefined();
+    expect(nextId(["T-001", "T-009", "", "other", "T-003"], schema)).toBe("T-010");
+    expect(nextId([], schema)).toBe("T-001");
+    expect(nextId(["a.1"], { type: "id", prefix: "a." })).toBe("a.2");
+  });
+
+  it("detects identifier columns", () => {
+    expect(detectColumn(["T-001", "T-002", "T-010"])).toEqual({ type: "id", prefix: "T-", digits: 3 });
+    expect(detectColumn(["1", "2", "3"], undefined, 0, "id")).toEqual({ type: "id", prefix: "", digits: 0 });
+    expect(detectColumn(["1", "2", "3"], undefined, 0, "Quantité").type).toBe("text");
+    expect(detectColumn(["T-1", "T-1", "T-2"]).type).not.toBe("id");
+  });
+});
+
+describe("normalizeSchema", () => {
+  it("sorts options and keeps one title", () => {
+    const normalized = normalizeSchema({
+      a: { type: "text", title: true },
+      b: {
+        type: "select",
+        title: true,
+        options: [
+          { value: "b", color: "red" },
+          { value: "A", color: "blue" },
+        ],
+      },
+    });
+    expect(normalized.a?.title).toBe(true);
+    expect(normalized.b?.title).toBeUndefined();
+    expect(normalized.b?.options?.map((option) => option.value)).toEqual(["A", "b"]);
+    expect(titleIndex(["x", "b", "a"], normalized)).toBe(2);
+    expect(titleIndex(["x"], {})).toBe(0);
   });
 });

@@ -3,7 +3,7 @@ import { useMemo, useState } from "react";
 import { OptionBadge, optionColor, SimpleSelect } from "@/components/fields";
 import { CardContent } from "@/components/views/cards";
 import type { Row } from "@/lib/csv";
-import type { ColumnSchema } from "@/lib/schema";
+import { type ColumnSchema, sortOptions } from "@/lib/schema";
 import { cn } from "@/lib/utils";
 import { useView } from "@/lib/view-context";
 
@@ -97,7 +97,7 @@ export function KanbanView() {
 
   const groups = useMemo(() => {
     if (!schema) return [];
-    const byValue = new Map<string, Row[]>((schema.options ?? []).map((option) => [option.value, []]));
+    const byValue = new Map<string, Row[]>(sortOptions(schema.options ?? []).map((option) => [option.value, []]));
     const empty: Row[] = [];
     for (const row of visible) {
       const value = row.cells[column] ?? "";

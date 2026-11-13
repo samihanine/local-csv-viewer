@@ -14,7 +14,7 @@ import {
   writeHandle,
 } from "@/lib/files";
 import type { ImportMode, Table } from "@/lib/import";
-import type { Schema } from "@/lib/schema";
+import { columnSchema, formatId, idNumber, normalizeSchema, type Schema } from "@/lib/schema";
 import {
   defaultState,
   type FileEntry,
@@ -26,28 +26,42 @@ import {
 } from "@/lib/workspace-store";
 
 export type Status = "idle" | "loading" | "permission" | "missing" | "ready";
-export type SaveState = "saved" | "saving" | "error";
 
-/** The open file. `data` is the optimistic truth: the UI reads it, the disk catches up. */
+/** The open file. `saved` is what is on disk, `data` the draft shown and edited until "Enregistrer". */
 type Session = {
   id: string;
   handle: FileSystemFileHandle;
+  saved: Dataset;
   data: Dataset;
   modified: number;
-  nextId: number;
-  dirty: boolean;
-  writing: boolean;
+  nextRowId: number;
 };
 
 const message = (error: unknown) => (error instanceof Error ? error.message : String(error));
 
-const WATCH_INTERVAL = 2000;
+const WATCH_INTERVAL = 3000;
+const DISCARD = "Les modifications non enregistrées seront perdues. Continuer ?";
+
+/** Fills the empty identifier cells of `rows`, continuing after the largest identifier of `all`. */
+function assignIds(columns: string[], schema: Schema, all: Row[], rows: Row[]) {
+  columns.forEach((column, index) => {
+    const type = columnSchema(schema, column);
+    if (type.type !== "id") return;
+    let max = 0;
+    for (const row of all) max = Math.max(max, idNumber(row.cells[index] ?? "", type) ?? 0);
+    for (const row of rows) if (!(row.cells[index] ?? "").trim()) row.cells[index] = formatId(++max, type);
+  });
+}
 
 export function useWorkspace() {
   const [registry, setRegistry] = useState<Registry>(loadRegistry);
   const [status, setStatus] = useState<Status>("idle");
   const [data, setData] = useState<Dataset>();
-  const [saveState, setSaveState] = useState<SaveState>("saved");
+  const [saved, setSaved] = useState<Dataset>();
+  /** Schema edited but not saved yet. Undefined when it matches the stored one. */
+  const [draftSchema, setDraftSchema] = useState<Schema>();
+  const [diskChanged, setDiskChanged] = useState(false);
+  const [saving, setSaving] = useState(false);
   const session = useRef<Session | undefined>(undefined);
   const pending = useRef<FileSystemFileHandle | undefined>(undefined);
 
@@ -55,6 +69,24 @@ export function useWorkspace() {
 
   const { activeId } = registry;
   const entry = useMemo(() => registry.files.find((file) => file.id === activeId), [registry.files, activeId]);
+  const schema = draftSchema ?? entry?.schema ?? {};
+  const schemaRef = useRef(schema);
+  schemaRef.current = schema;
+
+  const dirty = (!!data && data !== saved) || draftSchema !== undefined;
+  const dirtyRef = useRef(dirty);
+  dirtyRef.current = dirty;
+
+  /** Asks before throwing away unsaved changes. */
+  const confirmDiscard = useCallback(() => !dirtyRef.current || window.confirm(DISCARD), []);
+
+  // Leaving the page with unsaved changes asks first.
+  useEffect(() => {
+    if (!dirty) return;
+    const warn = (event: BeforeUnloadEvent) => event.preventDefault();
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [dirty]);
 
   const updateEntry = useCallback((change: (entry: FileEntry) => FileEntry) => {
     setRegistry((current) => ({
@@ -72,17 +104,11 @@ export function useWorkspace() {
     const parsed = parseCsv(text);
     // Legacy encodings are saved back as UTF-8 with a BOM, which Excel reads correctly.
     if (legacy) parsed.format.bom = true;
-    session.current = {
-      id,
-      handle,
-      data: parsed,
-      modified,
-      nextId: parsed.rows.length,
-      dirty: false,
-      writing: false,
-    };
+    session.current = { id, handle, saved: parsed, data: parsed, modified, nextRowId: parsed.rows.length };
     setData(parsed);
-    setSaveState("saved");
+    setSaved(parsed);
+    setDraftSchema(undefined);
+    setDiskChanged(false);
     setStatus("ready");
   }, []);
 
@@ -91,6 +117,9 @@ export function useWorkspace() {
     session.current = undefined;
     pending.current = undefined;
     setData(undefined);
+    setSaved(undefined);
+    setDraftSchema(undefined);
+    setDiskChanged(false);
     if (!activeId) {
       setStatus("idle");
       return;
@@ -113,23 +142,13 @@ export function useWorkspace() {
     };
   }, [activeId, read]);
 
-  const reload = useCallback(
-    async (current: Session) => {
-      await read(current.id, current.handle, () => session.current === current);
-    },
-    [read],
-  );
-
-  // Picks up changes made to the file by another program.
+  // Notices changes made to the file by another program. Reloading is left to the "Recharger" button.
   useEffect(() => {
     const check = async () => {
       const current = session.current;
-      if (!current || current.writing || current.dirty || document.hidden) return;
+      if (!current || document.hidden) return;
       const modified = await lastModified(current.handle).catch(() => undefined);
-      if (modified === undefined || modified === current.modified) return;
-      if (session.current !== current || current.writing || current.dirty) return;
-      await reload(current).catch(() => {});
-      toast.info("Le fichier a changé sur le disque, il a été rechargé.");
+      if (session.current === current && modified !== undefined && modified !== current.modified) setDiskChanged(true);
     };
     const timer = setInterval(check, WATCH_INTERVAL);
     window.addEventListener("focus", check);
@@ -137,49 +156,67 @@ export function useWorkspace() {
       clearInterval(timer);
       window.removeEventListener("focus", check);
     };
-  }, [reload]);
+  }, []);
 
-  // ---- Writing -----------------------------------------------------------------------------------------------------
+  /** Reads the file again from the disk, dropping the draft. */
+  const refresh = useCallback(async () => {
+    const current = session.current;
+    if (!current || !confirmDiscard()) return;
+    try {
+      await read(current.id, current.handle, () => session.current === current);
+      toast.success("Fichier rechargé depuis le disque");
+    } catch (error) {
+      toast.error(`Lecture impossible : ${message(error)}`);
+    }
+  }, [read, confirmDiscard]);
 
-  /** Writes the latest data. Edits made while a write is running are coalesced into the next one. */
-  const flush = useCallback(
-    async (current: Session) => {
-      if (current.writing) return;
-      current.writing = true;
-      const isCurrent = () => session.current === current;
-      if (isCurrent()) setSaveState("saving");
-      try {
-        while (current.dirty) {
-          current.dirty = false;
-          current.modified = await writeHandle(current.handle, serializeCsv(current.data));
-        }
-        if (isCurrent()) setSaveState("saved");
-      } catch (error) {
-        current.dirty = false;
-        if (!isCurrent()) return;
-        setSaveState("error");
-        toast.error(`Écriture impossible, modification annulée : ${message(error)}`);
-        // Roll the optimistic state back to what is really on disk.
-        current.writing = false;
-        await reload(current).catch(() => setStatus("permission"));
-      } finally {
-        current.writing = false;
+  // ---- Saving ------------------------------------------------------------------------------------------------------
+
+  const save = useCallback(async () => {
+    const current = session.current;
+    if (!current || !dirtyRef.current || saving) return;
+    if (
+      diskChanged &&
+      !window.confirm("Le fichier a été modifié par un autre programme. L'écraser avec vos modifications ?")
+    )
+      return;
+    setSaving(true);
+    try {
+      const draft = current.data;
+      if (draft !== current.saved) {
+        current.modified = await writeHandle(current.handle, serializeCsv(draft));
+        current.saved = draft;
+        setSaved(draft);
       }
-    },
-    [reload],
-  );
+      if (draftSchema !== undefined) {
+        const committed = draftSchema;
+        updateEntry((entry) => ({ ...entry, schema: committed }));
+        setDraftSchema(undefined);
+      }
+      setDiskChanged(false);
+      toast.success("Modifications enregistrées");
+    } catch (error) {
+      toast.error(`Écriture impossible : ${message(error)}`);
+    } finally {
+      setSaving(false);
+    }
+  }, [saving, diskChanged, draftSchema, updateEntry]);
 
-  const mutate = useCallback(
-    (change: (data: Dataset, current: Session) => Dataset) => {
-      const current = session.current;
-      if (!current) return;
-      current.data = change(current.data, current);
-      current.dirty = true;
-      setData(current.data);
-      void flush(current);
-    },
-    [flush],
-  );
+  /** Drops every change made since the last save. */
+  const discard = useCallback(() => {
+    const current = session.current;
+    if (!current) return;
+    current.data = current.saved;
+    setData(current.saved);
+    setDraftSchema(undefined);
+  }, []);
+
+  const mutate = useCallback((change: (data: Dataset, current: Session) => Dataset) => {
+    const current = session.current;
+    if (!current) return;
+    current.data = change(current.data, current);
+    setData(current.data);
+  }, []);
 
   // ---- Rows --------------------------------------------------------------------------------------------------------
 
@@ -200,9 +237,10 @@ export function useWorkspace() {
     (values: Record<number, string> = {}) => {
       let id: number | undefined;
       mutate((current, live) => {
-        id = live.nextId++;
-        const cells = current.columns.map((_, i) => values[i] ?? "");
-        return { ...current, rows: [...current.rows, { id, cells }] };
+        id = live.nextRowId++;
+        const row = { id, cells: current.columns.map((_, i) => values[i] ?? "") };
+        assignIds(current.columns, schemaRef.current, current.rows, [row]);
+        return { ...current, rows: [...current.rows, row] };
       });
       return id;
     },
@@ -224,9 +262,34 @@ export function useWorkspace() {
     [mutate],
   );
 
-  // ---- Columns -----------------------------------------------------------------------------------------------------
+  /** Gives an identifier to every row of an identifier column that has none. Returns how many were filled. */
+  const fillIds = useCallback(
+    (column: string) => {
+      let filled = 0;
+      mutate((current) => {
+        const index = current.columns.indexOf(column);
+        if (index < 0) return current;
+        const rows = current.rows.map((row) => ({ id: row.id, cells: [...row.cells] }));
+        const empty = rows.filter((row) => !(row.cells[index] ?? "").trim());
+        filled = empty.length;
+        if (!filled) return current;
+        assignIds([column], schemaRef.current, rows, empty);
+        return { ...current, rows };
+      });
+      return filled;
+    },
+    [mutate],
+  );
 
-  const setSchema = useCallback((schema: Schema) => updateEntry((current) => ({ ...current, schema })), [updateEntry]);
+  // ---- Schema and columns ------------------------------------------------------------------------------------------
+
+  const setSchema = useCallback(
+    (next: Schema) => {
+      const normalized = normalizeSchema(next);
+      setDraftSchema(JSON.stringify(normalized) === JSON.stringify(entry?.schema ?? {}) ? undefined : normalized);
+    },
+    [entry?.schema],
+  );
 
   const addColumn = useCallback(
     (name: string) =>
@@ -243,22 +306,26 @@ export function useWorkspace() {
       mutate((current) => ({ ...current, columns: current.columns.map((name) => (name === from ? to : name)) }));
       const rename = <T>(record: Record<string, T>): Record<string, T> =>
         Object.fromEntries(Object.entries(record).map(([key, value]) => [key === from ? to : key, value]));
+      setSchema(rename(schemaRef.current));
       const renameState = (state: ViewState): ViewState => ({
         ...state,
         filters: rename(state.filters),
         sort: state.sort?.column === from ? { ...state.sort, column: to } : state.sort,
         groupBy: state.groupBy === from ? to : state.groupBy,
-        order: state.order?.map((name) => (name === from ? to : name)),
         hidden: state.hidden?.map((name) => (name === from ? to : name)),
+        phases: state.phases?.map((phase) => ({
+          ...phase,
+          start: phase.start === from ? to : phase.start,
+          end: phase.end === from ? to : phase.end,
+        })),
       });
       updateEntry((current) => ({
         ...current,
-        schema: rename(current.schema),
         state: renameState(current.state),
         views: current.views.map((view) => ({ ...view, state: renameState(view.state) })),
       }));
     },
-    [mutate, updateEntry],
+    [mutate, updateEntry, setSchema],
   );
 
   const deleteColumn = useCallback(
@@ -272,12 +339,31 @@ export function useWorkspace() {
           rows: current.rows.map((row) => ({ id: row.id, cells: row.cells.toSpliced(index, 1) })),
         };
       });
-      updateEntry((current) => ({
-        ...current,
-        schema: Object.fromEntries(Object.entries(current.schema).filter(([key]) => key !== name)),
-      }));
+      setSchema(Object.fromEntries(Object.entries(schemaRef.current).filter(([key]) => key !== name)));
     },
-    [mutate, updateEntry],
+    [mutate, setSchema],
+  );
+
+  /** Moves a column of the CSV to another position. */
+  const moveColumn = useCallback(
+    (name: string, to: number) =>
+      mutate((current) => {
+        const from = current.columns.indexOf(name);
+        const target = Math.max(0, Math.min(to, current.columns.length - 1));
+        if (from < 0 || from === target) return current;
+        const move = <T>(list: T[]) => {
+          const next = [...list];
+          const [item] = next.splice(from, 1);
+          next.splice(target, 0, item as T);
+          return next;
+        };
+        return {
+          ...current,
+          columns: move(current.columns),
+          rows: current.rows.map((row) => ({ id: row.id, cells: move(row.cells) })),
+        };
+      }),
+    [mutate],
   );
 
   /** `table` is already laid out for its own column list, which starts with the existing columns. */
@@ -295,8 +381,9 @@ export function useWorkspace() {
         kept.forEach((row, i) => {
           row.id = current.rows[i]?.id ?? row.id;
         });
-        const added = toRows(table.rows, width, live.nextId);
-        live.nextId += added.length;
+        const added = toRows(table.rows, width, live.nextRowId);
+        live.nextRowId += added.length;
+        assignIds(table.columns, schemaRef.current, [...kept, ...added], added);
         return { ...current, columns: table.columns, rows: [...kept, ...added] };
       }),
     [mutate],
@@ -324,15 +411,17 @@ export function useWorkspace() {
   );
 
   const openFile = useCallback(async () => {
+    if (!confirmDiscard()) return;
     try {
       const handle = await pickCsvFile();
       if (handle) await register(handle);
     } catch (error) {
       toast.error(`Impossible d'ouvrir le fichier : ${message(error)}`);
     }
-  }, [register]);
+  }, [register, confirmDiscard]);
 
   const createFile = useCallback(async () => {
+    if (!confirmDiscard()) return;
     try {
       const handle = await createCsvFile();
       if (!handle) return;
@@ -341,7 +430,7 @@ export function useWorkspace() {
     } catch (error) {
       toast.error(`Impossible de créer le fichier : ${message(error)}`);
     }
-  }, [register]);
+  }, [register, confirmDiscard]);
 
   /** Points the current entry at a file picked again, keeping its schema and views. */
   const relinkFile = useCallback(async () => {
@@ -358,15 +447,25 @@ export function useWorkspace() {
     }
   }, [activeId, read, updateEntry]);
 
-  const selectFile = useCallback((id: string) => setRegistry((current) => ({ ...current, activeId: id })), []);
+  const selectFile = useCallback(
+    (id: string) => {
+      if (id === activeId || !confirmDiscard()) return;
+      setRegistry((current) => ({ ...current, activeId: id }));
+    },
+    [activeId, confirmDiscard],
+  );
 
-  const removeFile = useCallback((id: string) => {
-    void deleteHandle(id).catch(() => {});
-    setRegistry((current) => {
-      const files = current.files.filter((file) => file.id !== id);
-      return { files, activeId: current.activeId === id ? files[0]?.id : current.activeId };
-    });
-  }, []);
+  const removeFile = useCallback(
+    (id: string) => {
+      if (id === activeId && !confirmDiscard()) return;
+      void deleteHandle(id).catch(() => {});
+      setRegistry((current) => {
+        const files = current.files.filter((file) => file.id !== id);
+        return { files, activeId: current.activeId === id ? files[0]?.id : current.activeId };
+      });
+    },
+    [activeId, confirmDiscard],
+  );
 
   /** Called from a click, after a reload: the browser asks again before giving the file back. */
   const grantAccess = useCallback(async () => {
@@ -432,15 +531,23 @@ export function useWorkspace() {
     entry,
     status,
     data,
-    saveState,
+    schema,
+    dirty,
+    saving,
+    diskChanged,
+    save,
+    discard,
+    refresh,
     updateCell,
     addRow,
     deleteRow,
     insertRow,
+    fillIds,
     setSchema,
     addColumn,
     renameColumn,
     deleteColumn,
+    moveColumn,
     importTable,
     openFile,
     createFile,

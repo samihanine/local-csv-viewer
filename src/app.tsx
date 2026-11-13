@@ -1,15 +1,16 @@
 import {
-  CircleAlertIcon,
-  CircleCheckIcon,
   Columns3Icon,
   FileSpreadsheetIcon,
   Loader2Icon,
   MoonIcon,
+  RotateCwIcon,
+  SaveIcon,
   SearchIcon,
   SunIcon,
+  Undo2Icon,
   XIcon,
 } from "lucide-react";
-import { useCallback, useDeferredValue, useMemo, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 import { FilterBar } from "@/components/filter-bar";
 import { ImportDialog } from "@/components/import-dialog";
@@ -17,16 +18,17 @@ import { SchemaDialog } from "@/components/schema-dialog";
 import { MODE_META, Sidebar } from "@/components/sidebar";
 import { Button } from "@/components/ui/button";
 import { Toaster } from "@/components/ui/sonner";
-import { DetailView } from "@/components/views/detail-view";
+import { DetailPanel } from "@/components/views/detail-panel";
 import { GalleryView } from "@/components/views/gallery-view";
+import { GanttView } from "@/components/views/gantt-view";
 import { KanbanView } from "@/components/views/kanban-view";
 import { TableView } from "@/components/views/table-view";
 import { Loading, Missing, NeedsPermission, Welcome } from "@/components/welcome";
 import type { Row } from "@/lib/csv";
 import { runQuery } from "@/lib/query";
-import { type ColumnSchema, columnSchema, own, type Schema } from "@/lib/schema";
+import { type ColumnSchema, columnSchema, own, titleIndex } from "@/lib/schema";
 import { useTheme } from "@/lib/theme";
-import { type SaveState, useWorkspace } from "@/lib/use-workspace";
+import { useWorkspace } from "@/lib/use-workspace";
 import { baseName, cn, downloadBlob, formatNumber } from "@/lib/utils";
 import { type ViewContext, ViewProvider } from "@/lib/view-context";
 import { defaultState, displayColumns, MODES, sameState, type ViewState } from "@/lib/workspace-store";
@@ -34,16 +36,9 @@ import { exportXlsx, XLSX_MAX_ROWS } from "@/lib/xlsx";
 
 const NO_COLUMNS: string[] = [];
 const NO_ROWS: Row[] = [];
-const NO_SCHEMA: Schema = {};
 const DEFAULT_STATE: ViewState = defaultState();
 
-const VIEWS = { table: TableView, detail: DetailView, kanban: KanbanView, gallery: GalleryView };
-
-const SAVE_META: Record<SaveState, { label: string; icon: typeof CircleCheckIcon; className: string }> = {
-  saved: { label: "Enregistré dans le fichier", icon: CircleCheckIcon, className: "text-muted-foreground" },
-  saving: { label: "Enregistrement…", icon: Loader2Icon, className: "text-muted-foreground [&_svg]:animate-spin" },
-  error: { label: "Échec de l'écriture", icon: CircleAlertIcon, className: "text-destructive" },
-};
+const VIEWS = { table: TableView, kanban: KanbanView, gallery: GalleryView, gantt: GanttView };
 
 function Rail() {
   const { theme, toggle } = useTheme();
@@ -77,12 +72,31 @@ export function App() {
   const ready = status === "ready" && !!data && !!entry;
   const columns = data?.columns ?? NO_COLUMNS;
   const rows = data?.rows ?? NO_ROWS;
-  const schema = entry?.schema ?? NO_SCHEMA;
+  const { schema, dirty, saving, save, discard, refresh, diskChanged } = workspace;
   const state = entry?.state ?? DEFAULT_STATE;
   const { setViewState, setSchema, updateCell, addRow, deleteRow, insertRow } = workspace;
 
+  // The panel shows nothing of another file.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset when the file changes
+  useEffect(() => setSelectedId(undefined), [entry?.id]);
+
+  // Ctrl+S / Cmd+S saves.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault();
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        // Lets a field being edited commit its value first.
+        setTimeout(() => void save(), 0);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [save]);
+
   const types = useMemo(() => columns.map((column) => columnSchema(schema, column)), [columns, schema]);
   const display = useMemo(() => displayColumns(columns, state), [columns, state]);
+  const title = useMemo(() => titleIndex(columns, schema), [columns, schema]);
   const search = useDeferredValue(state.search);
   const visible = useMemo(
     () => runQuery(columns, rows, schema, { search, filters: state.filters, sort: state.sort }),
@@ -90,12 +104,10 @@ export function App() {
   );
 
   const openRow = useCallback(
-    (rowId: number) => {
-      setSelectedId(rowId);
-      setViewState({ mode: "detail" });
-    },
-    [setViewState],
+    (rowId: number) => setSelectedId((current) => (current === rowId ? undefined : rowId)),
+    [],
   );
+  const closeRow = useCallback(() => setSelectedId(undefined), []);
 
   const removeRow = useCallback(
     (rowId: number) => {
@@ -103,7 +115,7 @@ export function App() {
       const row = rows[index];
       if (!row) return;
       deleteRow(rowId);
-      toast("Ligne supprimée du fichier", { action: { label: "Annuler", onClick: () => insertRow(row, index) } });
+      toast("Ligne supprimée", { action: { label: "Annuler", onClick: () => insertRow(row, index) } });
     },
     [rows, deleteRow, insertRow],
   );
@@ -112,6 +124,7 @@ export function App() {
     () => ({
       columns,
       types,
+      title,
       display,
       rows,
       visible,
@@ -123,11 +136,12 @@ export function App() {
       createRow: addRow,
       newRow: (values) => {
         const id = addRow(values);
-        if (id !== undefined) openRow(id);
+        if (id !== undefined) setSelectedId(id);
       },
       removeRow,
       openRow,
       selectRow: setSelectedId,
+      closeRow,
       editFilter: (column: string) => {
         if (!own(state.filters, column)) setViewState({ filters: { ...state.filters, [column]: {} } });
         setOpenFilter(column);
@@ -137,6 +151,7 @@ export function App() {
     [
       columns,
       types,
+      title,
       display,
       rows,
       visible,
@@ -149,11 +164,12 @@ export function App() {
       addRow,
       removeRow,
       openRow,
+      closeRow,
     ],
   );
 
   const activeView = entry?.views.find((candidate) => candidate.id === entry.activeViewId);
-  const save = SAVE_META[workspace.saveState];
+  const selectedRow = selectedId === undefined ? undefined : rows.find((row) => row.id === selectedId);
   const View = VIEWS[state.mode] ?? TableView;
 
   const exportFile = () => {
@@ -175,10 +191,37 @@ export function App() {
             <span className="truncate font-medium">{entry?.name ?? "Aucun fichier"}</span>
           </p>
           {ready && (
-            <span className={cn("flex shrink-0 items-center gap-1.5 text-xs", save.className)} role="status">
-              <save.icon className="size-3.5" />
-              <span className="max-lg:hidden">{save.label}</span>
-            </span>
+            <div className="flex shrink-0 items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                title="Relire le fichier depuis le disque"
+                className={cn(
+                  "text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 relative flex h-8 items-center gap-1.5 rounded-lg px-2 text-xs transition-colors outline-none focus-visible:ring-3",
+                  diskChanged && "bg-amber-500/10 text-amber-700 dark:text-amber-400",
+                )}
+              >
+                <RotateCwIcon className="size-3.5" />
+                <span className={cn(!diskChanged && "max-lg:hidden")}>
+                  {diskChanged ? "Modifié sur le disque · Recharger" : "Recharger"}
+                </span>
+              </button>
+              {dirty && (
+                <>
+                  <span className="bg-border mx-1 h-5 w-px max-sm:hidden" />
+                  <span className="flex items-center gap-1.5 text-xs text-amber-700 max-md:hidden dark:text-amber-400">
+                    <span className="size-1.5 rounded-full bg-amber-500" /> Modifications non enregistrées
+                  </span>
+                  <Button variant="ghost" size="sm" className="h-8 text-[13px]" onClick={discard} disabled={saving}>
+                    <Undo2Icon /> Annuler
+                  </Button>
+                  <Button size="sm" className="h-8 px-3 text-[13px]" onClick={() => void save()} disabled={saving}>
+                    {saving ? <Loader2Icon className="animate-spin" /> : <SaveIcon />} Enregistrer
+                    <kbd className="ml-1 hidden rounded bg-white/15 px-1 font-sans text-[10px] lg:inline">Ctrl S</kbd>
+                  </Button>
+                </>
+              )}
+            </div>
           )}
           {ready && (
             <div className="relative ml-auto w-72 max-w-[45%]">
@@ -276,11 +319,16 @@ export function App() {
                   onSaveView={workspace.saveView}
                   onUpdateView={() => activeView && workspace.updateView(activeView.id)}
                 />
-                <div className="min-h-0 flex-1">
+                <div className="relative flex min-h-0 flex-1">
                   {columns.length ? (
-                    <View />
+                    <>
+                      <div className="min-w-0 flex-1">
+                        <View />
+                      </div>
+                      {selectedRow && <DetailPanel row={selectedRow} />}
+                    </>
                   ) : (
-                    <div className="flex h-full flex-col items-center justify-center gap-4 text-center">
+                    <div className="flex h-full flex-1 flex-col items-center justify-center gap-4 text-center">
                       <p className="text-muted-foreground">
                         Ce fichier est vide : commencez par lui ajouter des colonnes.
                       </p>
@@ -300,6 +348,8 @@ export function App() {
                   onAddColumn={workspace.addColumn}
                   onRenameColumn={workspace.renameColumn}
                   onDeleteColumn={workspace.deleteColumn}
+                  onMoveColumn={workspace.moveColumn}
+                  onFillIds={workspace.fillIds}
                 />
                 <ImportDialog
                   open={dialog === "import"}

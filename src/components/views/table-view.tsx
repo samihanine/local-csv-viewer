@@ -1,7 +1,5 @@
 import {
   ArrowDownIcon,
-  ArrowLeftIcon,
-  ArrowRightIcon,
   ArrowUpIcon,
   CheckIcon,
   Columns3Icon,
@@ -9,6 +7,7 @@ import {
   ListFilterIcon,
   Maximize2Icon,
   PlusIcon,
+  StarIcon,
   Trash2Icon,
   XIcon,
 } from "lucide-react";
@@ -42,7 +41,7 @@ import { useView } from "@/lib/view-context";
 
 const ROW_HEIGHT = 38;
 const GUTTER = 64;
-const WIDTHS: Record<ColumnType, number> = { text: 220, longtext: 320, date: 150, select: 180 };
+const WIDTHS: Record<ColumnType, number> = { id: 110, text: 220, longtext: 320, date: 150, select: 180 };
 
 type Editing = { id: number; column: number } | null;
 
@@ -50,7 +49,7 @@ const cellClass =
   "flex h-full w-full items-center overflow-hidden px-3 text-left outline-none hover:bg-muted/40 focus-visible:bg-muted/60";
 
 function HeaderCell({ column, index, width }: { column: string; index: number; width: number }) {
-  const { types, state, setViewState, setColumnSchema, editFilter, openSchema } = useView();
+  const { types, state, title, setViewState, setColumnSchema, editFilter, openSchema } = useView();
   const layout = useColumnLayout();
   const schema = types[index] as ColumnSchema;
   const sorted = state.sort?.column === column ? state.sort : undefined;
@@ -64,6 +63,7 @@ function HeaderCell({ column, index, width }: { column: string; index: number; w
       >
         <TypeIconFor type={schema.type} />
         <span className="truncate font-medium">{column}</span>
+        {index === title && <StarIcon aria-label="Titre" className="size-3 shrink-0 fill-amber-400 text-amber-400" />}
         {filtered && <ListFilterIcon className="text-brand size-3.5 shrink-0" />}
         {sorted &&
           (sorted.desc ? (
@@ -88,12 +88,6 @@ function HeaderCell({ column, index, width }: { column: string; index: number; w
           <ListFilterIcon /> Filtrer
         </DropdownMenuItem>
         <DropdownMenuSeparator />
-        <DropdownMenuItem onClick={() => layout.nudge(column, -1)}>
-          <ArrowLeftIcon /> Déplacer à gauche
-        </DropdownMenuItem>
-        <DropdownMenuItem onClick={() => layout.nudge(column, 1)}>
-          <ArrowRightIcon /> Déplacer à droite
-        </DropdownMenuItem>
         <DropdownMenuItem disabled={!layout.canHide(column)} onClick={() => layout.toggle(column)}>
           <EyeOffIcon /> Masquer la colonne
         </DropdownMenuItem>
@@ -125,16 +119,20 @@ type CellProps = {
 };
 
 const Cell = memo(function Cell({ rowId, column, value, schema, name, editing, setEditing }: CellProps) {
-  const { updateCell, setColumnSchema, display: shown } = useView();
+  const { updateCell, setColumnSchema, display: shown, title } = useView();
+  const bold = column === title && "font-semibold";
   const commit = (next: string) => updateCell(rowId, column, next);
   const me = { id: rowId, column };
   const display = <CellValue value={value} schema={schema} />;
+
+  // Identifiers are given by the app, they are not edited by hand.
+  if (schema.type === "id") return <div className={cn(cellClass, "hover:bg-transparent", bold)}>{display}</div>;
 
   if (schema.type === "select" || schema.type === "longtext") {
     const long = schema.type === "longtext";
     return (
       <Popover open={editing} onOpenChange={(open) => setEditing(open ? me : null)}>
-        <PopoverTrigger className={cn(cellClass, editing && "bg-muted/60 ring-brand ring-2 ring-inset")}>
+        <PopoverTrigger className={cn(cellClass, bold, editing && "bg-muted/60 ring-brand ring-2 ring-inset")}>
           {display}
         </PopoverTrigger>
         <PopoverContent sideOffset={2} className={long ? "w-[34rem] max-w-[calc(100vw-2rem)] p-2" : "w-64 p-2"}>
@@ -158,7 +156,12 @@ const Cell = memo(function Cell({ rowId, column, value, schema, name, editing, s
 
   if (!editing)
     return (
-      <button type="button" className={cellClass} onClick={() => setEditing(me)} onFocus={() => setEditing(me)}>
+      <button
+        type="button"
+        className={cn(cellClass, bold)}
+        onClick={() => setEditing(me)}
+        onFocus={() => setEditing(me)}
+      >
         {display}
       </button>
     );
@@ -171,7 +174,7 @@ const Cell = memo(function Cell({ rowId, column, value, schema, name, editing, s
       type={date ? "date" : "text"}
       aria-label={name}
       defaultValue={date ? (parseDate(value, schema.dateFormat) ?? "") : value}
-      className="bg-background ring-brand h-full w-full px-3 ring-2 outline-none ring-inset"
+      className={cn("bg-background ring-brand h-full w-full px-3 ring-2 outline-none ring-inset", bold)}
       onBlur={(event) => {
         const raw = event.target.value;
         const next = date ? (raw ? formatDate(raw, schema.dateFormat) : "") : raw;
@@ -200,18 +203,25 @@ const Cell = memo(function Cell({ rowId, column, value, schema, name, editing, s
 type RowProps = { row: Row; index: number; widths: number[]; editingColumn: number; setEditing: (e: Editing) => void };
 
 const TableRow = memo(function TableRow({ row, index, widths, editingColumn, setEditing }: RowProps) {
-  const { columns, types, display, openRow, removeRow } = useView();
+  const { columns, types, display, selectedId, openRow, removeRow } = useView();
+  const selected = row.id === selectedId;
   return (
-    <div className="group absolute left-0 flex border-b" style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}>
+    <div
+      className={cn("group absolute left-0 flex border-b", selected && "bg-brand/[0.06]")}
+      style={{ top: index * ROW_HEIGHT, height: ROW_HEIGHT }}
+    >
       <div
         style={{ width: GUTTER }}
-        className="bg-background text-muted-foreground sticky left-0 z-10 flex shrink-0 items-center justify-center border-r text-xs tabular-nums"
+        className={cn(
+          "bg-background text-muted-foreground sticky left-0 z-10 flex shrink-0 items-center justify-center border-r text-xs tabular-nums",
+          selected && "shadow-[inset_3px_0_0_var(--brand)]",
+        )}
       >
         <span className="group-focus-within:hidden group-hover:hidden">{index + 1}</span>
         <span className="hidden items-center gap-0.5 group-focus-within:flex group-hover:flex">
           <button
             type="button"
-            title="Ouvrir la fiche"
+            title={selected ? "Fermer la fiche" : "Ouvrir la fiche"}
             aria-label={`Ouvrir la ligne ${index + 1}`}
             onClick={() => openRow(row.id)}
             className="hover:bg-muted hover:text-foreground grid size-6 place-items-center rounded-md"
@@ -247,7 +257,7 @@ const TableRow = memo(function TableRow({ row, index, widths, editingColumn, set
 });
 
 export function TableView() {
-  const { columns, types, display, visible, rows, createRow, openRow, state } = useView();
+  const { columns, types, display, visible, rows, createRow, selectRow, state, title } = useView();
   const [editing, setEditing] = useState<Editing>(null);
   const { ref, start, end } = useVirtual(visible.length, ROW_HEIGHT);
   const widths = useMemo(() => types.map((schema) => WIDTHS[schema.type]), [types]);
@@ -258,8 +268,8 @@ export function TableView() {
     const id = createRow();
     if (id === undefined) return;
     // With filters or a sort, the new row may not be at the bottom, or not be listed at all: show its form.
-    if (narrowed) return openRow(id);
-    setEditing({ id, column: 0 });
+    if (narrowed) return selectRow(id);
+    setEditing({ id, column: title });
     requestAnimationFrame(() => ref.current?.scrollTo({ top: ref.current.scrollHeight }));
   };
 

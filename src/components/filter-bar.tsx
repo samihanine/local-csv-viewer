@@ -10,6 +10,7 @@ import {
 import { useState } from "react";
 import { ColumnsMenu } from "@/components/columns-menu";
 import { OptionBadge, optionColor, SimpleSelect, TypeIconFor } from "@/components/fields";
+import { PhasesMenu } from "@/components/phases-menu";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -23,7 +24,7 @@ import { Input } from "@/components/ui/input";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { defaultGroupBy } from "@/components/views/kanban-view";
 import { type Filter, isActive } from "@/lib/query";
-import { type ColumnSchema, displayDate, own } from "@/lib/schema";
+import { type ColumnSchema, displayDate, own, sortOptions } from "@/lib/schema";
 import { cn } from "@/lib/utils";
 import { useView } from "@/lib/view-context";
 import type { SavedView } from "@/lib/workspace-store";
@@ -46,17 +47,30 @@ function FilterEditor({ column, schema, filter }: { column: string; schema: Colu
 
   if (schema.type === "select") {
     const index = columns.indexOf(column);
-    const known = (schema.options ?? []).map((option) => option.value);
+    const known = sortOptions(schema.options ?? []).map((option) => option.value);
     // Values present in the file but missing from the schema can still be filtered on.
     const extra = [...new Set(rows.map((row) => row.cells[index] ?? ""))]
       .filter((v) => v && !known.includes(v))
-      .slice(0, 50);
+      .slice(0, 50)
+      .sort((a, b) => a.localeCompare(b, "fr", { numeric: true, sensitivity: "base" }));
+    const all = [...known, ...extra, ""];
     const selected = filter.values ?? [];
+    const allSelected = all.every((value) => selected.includes(value));
     const toggle = (value: string) =>
       change({ values: selected.includes(value) ? selected.filter((v) => v !== value) : [...selected, value] });
     return (
       <div className="max-h-72 overflow-y-auto">
-        {[...known, ...extra, ""].map((value) => (
+        {/* biome-ignore lint/a11y/noLabelWithoutControl: the checkbox is the control */}
+        <label className="hover:bg-accent flex cursor-pointer items-center gap-2.5 rounded-lg px-2 py-1.5 font-medium">
+          <Checkbox
+            checked={allSelected}
+            indeterminate={!allSelected && selected.length > 0}
+            onCheckedChange={() => change({ values: allSelected ? [] : all })}
+          />
+          Tout sélectionner
+        </label>
+        <div className="bg-border mx-2 my-1 h-px" />
+        {all.map((value) => (
           // biome-ignore lint/a11y/noLabelWithoutControl: the checkbox is the control
           <label
             key={value}
@@ -144,6 +158,13 @@ export function FilterBar({ open, onOpenChange, activeView, dirty, onSaveView, o
 
   return (
     <div className="flex flex-wrap items-center gap-2 border-b px-6 py-2.5 max-sm:px-4">
+      {state.mode === "gantt" && (
+        <div className="flex items-center gap-1.5">
+          <PhasesMenu />
+          <span className="bg-border mx-1 h-5 w-px" />
+        </div>
+      )}
+
       {state.mode === "kanban" && (
         <div className="flex items-center gap-1.5">
           <LayersIcon className="text-muted-foreground size-3.5" />

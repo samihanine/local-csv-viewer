@@ -1,5 +1,6 @@
 import {
   BookmarkIcon,
+  ChartGanttIcon,
   CheckIcon,
   ChevronsUpDownIcon,
   Columns3Icon,
@@ -12,7 +13,6 @@ import {
   LayoutGridIcon,
   type LucideIcon,
   PlusIcon,
-  Rows3Icon,
   ShieldCheckIcon,
   SquareKanbanIcon,
   Table2Icon,
@@ -32,9 +32,9 @@ import type { FileEntry, Mode } from "@/lib/workspace-store";
 
 export const MODE_META: Record<Mode, { label: string; icon: LucideIcon }> = {
   table: { label: "Tableau", icon: Table2Icon },
-  detail: { label: "Détail", icon: Rows3Icon },
   kanban: { label: "Kanban", icon: SquareKanbanIcon },
   gallery: { label: "Galerie", icon: LayoutGridIcon },
+  gantt: { label: "Gantt", icon: ChartGanttIcon },
 };
 
 type FileSwitcherProps = {
