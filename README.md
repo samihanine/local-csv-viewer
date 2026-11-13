@@ -13,11 +13,12 @@ React + TypeScript + Vite + Tailwind + shadcn/ui (Base UI) + Bun.
 - **Recharger** : relit le fichier depuis le disque. Un changement fait par un autre programme est signalé sur le bouton.
 - **Affichages** : tableau éditable, kanban (glisser-déposer, colonne de regroupement au choix), galerie et Gantt.
 - **Panneau de détail** : un clic sur une ligne, une carte ou une barre ouvre son formulaire à droite ; un second clic, la croix ou Échap le referme.
-- **Gantt** : des phases (colonne de début, colonne de fin, couleur) réglées dans la barre de filtres, devinées depuis les noms de colonnes (`test_start_date` / `test_end_date`…). Une phase sans ses deux dates n'est pas dessinée, une ligne sans phase complète n'apparaît pas ; le titre est affiché à droite des barres.
+- **Gantt** : un tableau à deux colonnes, le titre de chaque ligne puis sa frise (qui prend toute la largeur restante), une ligne par tâche ; des phases (colonne de début, colonne de fin, couleur) réglées dans la barre de filtres, devinées depuis les noms de colonnes (`test_start_date` / `test_end_date`…). Une phase sans ses deux dates n'est pas dessinée, une ligne sans phase complète n'apparaît pas.
 - **Filtres** sur chaque colonne (avec « Tout sélectionner » pour les options), recherche globale, tri, colonnes masquées, et **vues enregistrées** (affichage + filtres + tri + regroupement + colonnes + phases).
 - **Schéma** par fichier : texte court, texte long (markdown), date, options colorées (triées par ordre alphabétique), identifiant. Ordre des colonnes, colonne titre (étoile, affichée en gras), détection automatique des types, export et import du schéma en JSON.
 - **Identifiants** : texte du type `T-001`, avec préfixe et nombre minimum de chiffres ; chaque nouvelle ligne reçoit le plus grand numéro + 1.
 - **Export XLSX** : une feuille et une table Excel nommées `data` en A1 (triables et filtrables), bordures, retour à la ligne, hauteur de ligne uniforme, largeur selon le type, titre en gras ; les colonnes à options ont une liste déroulante et une couleur de fond par option.
+- **Lecteur Excel** (onglet vert du rail) : déposez un `.xlsx`, sa première feuille s'affiche en tableau ; « Télécharger le Excel » rend un classeur brut (valeurs seules, sans mise en forme), « Copier sans l'en-tête » copie toutes les lignes sauf la première, prêtes à coller dans Excel.
 - **Import CSV / XLSX** : ajout à la fin ou remplacement, avec correspondance des colonnes si elles diffèrent.
 
 Navigateur requis : Chrome, Edge ou un autre navigateur Chromium sur ordinateur (API File System Access).
@@ -57,6 +58,7 @@ src/
     fields.tsx            Affichage et édition d'une cellule selon son type
     markdown-editor.tsx   Éditeur de texte long
     schema-dialog.tsx     Schéma des colonnes
+    excel-page.tsx        Lecteur Excel
     import-dialog.tsx     Import CSV / XLSX
     ui/                   Composants shadcn/ui
   lib/                    Logique sans interface, testée (*.test.ts)
@@ -68,6 +70,7 @@ src/
     query.ts              Recherche, filtres, tri
     xlsx.ts               Génération du classeur Excel
     gantt.ts              Phases et barres du Gantt
+    excel-tools.ts        Lecteur Excel : lecture, copie, classeur brut
     import.ts             Lecture des fichiers importés et correspondance des colonnes
     markdown.tsx          Rendu markdown
 ```
